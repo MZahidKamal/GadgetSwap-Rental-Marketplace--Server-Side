@@ -104,6 +104,34 @@ async function run() {
 
 
 
+        /*====================================== AUTH RELATED APIs ===================================================*/
+
+        app.post('/generate_jwt_and_get_token', async (req, res) => {
+            const {email} = req.body;
+
+            //Generating JSON Web Token.
+            const token = jwt.sign({data: email}, process.env.ACCESS_JWT_SECRET, {expiresIn: '1h'});
+            // console.log(token)
+
+            //Setting JWT, at the client side, in the HTTP only cookie.
+            res.cookie('token', token, {
+                httpOnly: true,                                                                                                             //Cookies access restricted from client side.
+                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in dev environment, and true while in production.
+                sameSite: process.env.NODE_ENVIRONMENT === 'production' ? 'none' : 'Lax',                                                   //Protection from CSRF. None or lax supports most cross-origin use cases.
+                maxAge: 3600000,                                                                                                            //Token validity in millisecond. Setting this to cookies.
+            }).status(201).send({token, success: true, message: "Login Successful, JWT stored in Cookie!"});
+        })
+
+
+        app.post('/logout_and_clear_jwt', (req, res) => {
+            // Clearing the HTTP-only cookie by setting maxAge to 0.
+            res.clearCookie('token', {
+                httpOnly: true,                                                                                                             //Cookies access restricted from client side.
+                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in dev environment, and true while in production.
+                sameSite: process.env.NODE_ENVIRONMENT === 'production' ? 'none' : 'Lax',                                                   //Protection from CSRF. None or lax supports most cross-origin use cases.
+                maxAge: 0,                                                                                                                  //Token validity in millisecond. Setting this to cookies.
+            }).status(200).send({success: true, message: "Logout successful, cookie cleared!"});
+        });
 
 
 
