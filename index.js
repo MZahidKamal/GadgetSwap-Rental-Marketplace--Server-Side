@@ -10,8 +10,10 @@ require('dotenv').config();                                                    /
 const port = process.env.PORT || 3000;                            //Default from Express.js but .env applied, therefore positioned after dotenv import.
 // console.log(port);
 
+const jwt = require('jsonwebtoken');                                       //Default from JSON Web Token.
 
 const cookieParser = require('cookie-parser');      //Default from cookie-parser package.
+
 
 
 
@@ -41,6 +43,30 @@ app.use(express.urlencoded({extended: true}))
 After using cookieParser(), you can access cookies through req.cookies (for normal cookies) and req.signedCookies (for signed cookies) in your routes. */
 app.use(cookieParser());
 
+
+
+
+
+// Custom middleware for JWT verification.
+const verifyJWT = (req, res, next) => {
+    const email = req?.body?.email;
+    const token = req?.cookies?.token;
+    // console.log({email, token});
+
+    // If there is no JWT
+    if (!token) {
+        return res.send({status: 401, message: "No token provided, authorization denied!"});
+    }
+
+    // Verify the JWT
+    jwt.verify(token, process.env.ACCESS_JWT_SECRET, (error, decoded) => {
+        if (error) {
+            return res.send({status: 402, message: "Invalid or expired token!"});
+        }
+        req.decoded_email = decoded?.data;
+        next(); // Call the next middleware.
+    });
+};
 
 
 
@@ -78,10 +104,17 @@ async function run() {
 
 
 
+
+
+
+
+
         /*====================================== USERS COLLECTION ====================================================*/
 
         /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "userCollection" AND ACCESS IT */
         const userCollection = database.collection("userCollection");
+
+
 
 
 
@@ -102,7 +135,6 @@ run().catch(console.dir);
 
 
 
-
 /* REST CODE OF EXPRESS.JS -------------------------------------------------------------------------------------------*/
 
 /* This defines a route handler for the root URL (/).
@@ -110,6 +142,9 @@ When a GET request is made to the root, it sends the response: "GadgetSwap Renta
 app.get('/', (req, res) => {
     res.send('GadgetSwap Rental Marketplace Application Server Side is running!');
 })
+
+
+
 
 
 /* This starts the Express server and listens for incoming connections on the specified port.
