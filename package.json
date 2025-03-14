@@ -1,0 +1,15 @@
+{
+  "name": "gadgetswap-rental-marketplace--server-side",
+  "version": "1.0.0",
+  "description": "GadgetSwap Rental Marketplace",
+  "license": "ISC",
+  "author": "Mohammad Zahid Kamal & EndGame Coding Team Members (Team Code EG-1008.2)",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
