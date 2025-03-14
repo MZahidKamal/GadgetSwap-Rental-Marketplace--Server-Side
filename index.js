@@ -46,6 +46,63 @@ app.use(cookieParser());
 
 
 
+/* MONGODB CONNECTIONS AND APIS --------------------------------------------------------------------------------------*/
+
+const {MongoClient, ServerApiVersion, ObjectId} = require('mongodb');
+
+
+/* The URI points to a specific MongoDB cluster and includes options for retrying writes and setting the write concern. */
+const uri = `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@cluster0.ktxyk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`; //From MongoDB Connection String
+
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
+});
+
+console.log('Current selected Domain: ', process.env.NODE_ENVIRONMENT === 'production' ? 'agadgetswap.netlify.app' : 'localhost');
+
+async function run() {
+    try {
+        // Connect the client to the server	(optional starting in v4.7)
+        // await client.connect();
+        // Send a ping to confirm a successful connection
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        const database = client.db("GadgetSwapRentalMarketplaceApplicationSystemDB");
+
+
+
+
+
+        /*====================================== USERS COLLECTION ====================================================*/
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "userCollection" AND ACCESS IT */
+        const userCollection = database.collection("userCollection");
+
+
+
+        /*============================================================================================================*/
+
+
+    } catch (error) {
+        console.error('MongoDB connection error:', error);
+    } finally {
+        // Ensures that the client will close when you finish/error
+        // await client.close();
+    }
+}
+
+run().catch(console.dir);
+
+
+
+
+
+
 /* REST CODE OF EXPRESS.JS -------------------------------------------------------------------------------------------*/
 
 /* This defines a route handler for the root URL (/).
