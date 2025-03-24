@@ -184,6 +184,16 @@ async function run() {
 
 
 
+        /*====================================== GADGETS COLLECTION ====================================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "gadgetsCollection" AND ACCESS IT */
+        const gadgetsCollection = database.collection("gadgetsCollection");
+
+
+
+
+
         /*============================================================================================================*/
 
 
