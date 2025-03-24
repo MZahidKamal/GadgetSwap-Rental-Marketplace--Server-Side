@@ -191,6 +191,53 @@ async function run() {
         const gadgetsCollection = database.collection("gadgetsCollection");
 
 
+        // GET endpoint for top 3 gadgets per category
+        app.get("/gadgets/featured_gadgets_for_home_page", async (req, res) => {
+            try {
+                const categories = ["Smartphones", "Laptops", "Tablets", "Smartwatches", "Cameras",
+                    "Gaming", "Audio", "Headphones", "Speakers", "Wearables", "VR", "Drones", "Projectors"];
+
+                let featuredGadgets = [];
+
+                // Loop through each category
+                for (const category of categories) {
+                    const gadgets = await gadgetsCollection
+                        .find({category}) // Filter by category
+                        .sort({totalRentalCount: -1}) // Sort by popularity (descending)
+                        .limit(3) // Top 3 only
+                        .toArray();
+
+                    // Map to requested format
+                    const formattedGadgets = gadgets.map((gadget) => ({
+                        id: gadget?._id.toString(),
+                        name: gadget?.name,
+                        category: gadget?.category,
+                        image: gadget?.images[0], // First image
+                        pricePerDay: gadget?.pricing?.perDay,
+                        average_rating: gadget?.average_rating,
+                        description: gadget?.description,
+                    }));
+
+                    featuredGadgets = featuredGadgets.concat(formattedGadgets);
+                }
+
+                // Return the formatted data
+                return res.send({
+                    status: 200,
+                    data: featuredGadgets,
+                    message: "Featured gadgets, for home page, fetched successfully!"
+                });
+            }
+            catch (error) {
+                console.error("Failed to fetch featured gadgets, for home page! :", error);
+                return res.send({
+                    status: 500,
+                    message: "Failed to fetch featured gadgets, for home page!"
+                });
+            }
+        });
+
+
         /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
         app.get("/gadgets/get_all_gadgets_for_gadgets_page", async (req, res) => {
             try {
