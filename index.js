@@ -226,6 +226,25 @@ async function run() {
         });
 
 
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.get("/gadgets/get_gadget_details_by_id/:id", async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) };
+            const gadgetResult = await gadgetsCollection.findOne(query);
+            if (gadgetResult) {
+                res.send({
+                    status: 200,
+                    data: gadgetResult,
+                    message: 'Gadget details by id fetched successfully!' });
+            } else {
+                res.send({
+                    status: 404,
+                    message: 'Failed to fetch Gadget details by id! Gadget not found!'
+                });
+            }
+        });
+
+
 
 
 
