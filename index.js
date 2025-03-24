@@ -191,6 +191,41 @@ async function run() {
         const gadgetsCollection = database.collection("gadgetsCollection");
 
 
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.get("/gadgets/get_all_gadgets_for_gadgets_page", async (req, res) => {
+            try {
+                // Fetch all gadgets from the collection
+                const allGadgetObjects = await gadgetsCollection.find().toArray();
+
+                // Transform data into requested format
+                const formattedGadgets = allGadgetObjects.map((gadget) => ({
+                    id: gadget?._id.toString(), // Convert ObjectId to string
+                    name: gadget?.name,
+                    category: gadget?.category,
+                    image: gadget?.images[0], // First image from the array
+                    average_rating: gadget?.average_rating,
+                    pricePerDay: gadget?.pricing?.perDay,
+                    description: gadget?.description,
+                    popularity: gadget?.totalRentalCount, // Using totalRentalCount as popularity
+                }));
+
+                // Return the formatted data
+                return res.send({
+                    status: 200,
+                    data: formattedGadgets,
+                    message: "Gadgets, for gadgets page, fetched successfully!"
+                });
+            }
+            catch (error) {
+                console.error("Failed to fetch Gadgets, for gadgets page! :", error);
+                return res.send({
+                    status: 500,
+                    message: "Failed to fetch Gadgets, for gadgets page!"
+                });
+            }
+        });
+
+
 
 
 
