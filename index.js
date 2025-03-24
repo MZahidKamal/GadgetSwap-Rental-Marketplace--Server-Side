@@ -98,7 +98,7 @@ async function run() {
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
         // console.log("Pinged your deployment. You successfully connected to MongoDB!");
-        const database = client.db("GadgetSwapRentalMarketplaceApplicationSystemDB");
+        const database = client.db("GadgetSwapApplicationSystemDB");
 
 
 
@@ -139,8 +139,46 @@ async function run() {
 
         /*====================================== USERS COLLECTION ====================================================*/
 
+
         /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "userCollection" AND ACCESS IT */
         const userCollection = database.collection("userCollection");
+
+
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.post('/users/add_new_user', async (req, res) => {
+            try {
+                const {newUser} = req.body;
+                const result = await userCollection.insertOne(newUser);
+                if (result){
+                    res.send({status: 201, message: "User created successfully."});
+                }
+            } catch (error) {
+                res.send({status: 500, message: "Internal Server Error"});
+            }
+        });
+
+
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.post('/users/find_availability_by_email', async (req, res) => {
+            const { email } = req.body;
+            const query = { email: email };
+            const result = await userCollection.findOne(query);
+            if (result) {
+                res.send({ status: 409, exists: true, message: 'Registration failed. Email already exists!' });
+            } else {
+                res.send({ status: 404, exists: false, message: 'Email address not exists!' });
+            }
+        });
+
+
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.post('/users/get_user_by_email', async (req, res) => {
+            const { email } = req.body;
+            const query = { email: email };
+            const result = await userCollection.findOne(query);
+            // res.status(200).send(result);
+            res.send({status: 200, data: result, message: 'Login successful!'});
+        })
 
 
 
