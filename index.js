@@ -150,6 +150,10 @@ async function run() {
                 const {newUser} = req.body;
                 const result = await userCollection.insertOne(newUser);
                 if (result){
+
+
+
+
                     res.send({status: 201, message: "User created successfully."});
                 }
             } catch (error) {
@@ -181,10 +185,62 @@ async function run() {
         })
 
 
+        // TODO: JWT verification will be added later.
+        app.patch('/users/add_or_remove_a_gadget_id_to_or_from_wishlist', async (req, res) => {
+            try {
+                const { userEmail, gadgetId } = req.body;
+
+                // Input validation
+                if (!userEmail || !gadgetId) {
+                    return res.status(400).send({ status: 400, message: "userEmail and gadgetId are required!" });
+                }
+
+                // Verifying user authenticity
+                /*const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }*/
+
+                // Find the user
+                const query = { email: userEmail };
+                const userResult = await userCollection.findOne(query);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Check if gadgetId exists in wishlist
+                const userWishlistArray = userResult.wishlist || [];
+                const gadgetExists = userWishlistArray.includes(gadgetId);
+
+                // Prepare update operation
+                const update = gadgetExists
+                    ? { $pull: { wishlist: gadgetId } }
+                    : { $addToSet: { wishlist: gadgetId } };
+
+                // Update the wishlist
+                const updatedUserResult = await userCollection.updateOne(query, update);
+
+                // Check if update was successful
+                if (updatedUserResult.modifiedCount > 0) {
+                    const message = gadgetExists
+                        ? "Gadget removed from wishlist successfully!"
+                        : "Gadget added to wishlist successfully!";
+                    return res.status(200).send({ status: 200, message });
+                } else {
+                    return res.status(400).send({ status: 400, message: "No changes made to the wishlist!" });
+                }
+
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ status: 500, message: "Something went wrong!" });
+            }
+        });
 
 
 
-        /*====================================== GADGETS COLLECTION ====================================================*/
+
+
+        /*====================================== GADGETS COLLECTION ==================================================*/
 
 
         /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "gadgetsCollection" AND ACCESS IT */
@@ -290,6 +346,36 @@ async function run() {
                 });
             }
         });
+
+
+
+
+
+        /*====================================== MESSAGES COLLECTION =================================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "messagesCollection" AND ACCESS IT */
+        const messagesCollection = database.collection("messagesCollection");
+
+
+
+
+
+        /*==================================== NOTIFICATIONS COLLECTION ==============================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "notificationsCollection" AND ACCESS IT */
+        const notificationsCollection = database.collection("notificationsCollection");
+
+
+
+
+
+        /*================================= ACTIVITY HISTORIES COLLECTION ============================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "activityHistoriesCollection" AND ACCESS IT */
+        const activityHistoriesCollection = database.collection("activityHistoriesCollection");
 
 
 
