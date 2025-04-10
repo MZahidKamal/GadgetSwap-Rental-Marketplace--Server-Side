@@ -219,20 +219,22 @@ async function run() {
 
                 // Update the wishlist
                 const updatedUserResult = await userCollection.updateOne(query, update);
+                const postUpdateUserResult = await userCollection.findOne(query);
 
                 // Check if update was successful
                 if (updatedUserResult.modifiedCount > 0) {
+
                     const message = gadgetExists
                         ? "Gadget removed from wishlist successfully!"
                         : "Gadget added to wishlist successfully!";
-                    return res.status(200).send({ status: 200, message });
+                    return res.send({ status: 200, message: message, data: postUpdateUserResult.wishlist });
                 } else {
-                    return res.status(400).send({ status: 400, message: "No changes made to the wishlist!" });
+                    return res.send({ status: 400, message: "No changes made to the wishlist!", data: postUpdateUserResult.wishlist });
                 }
 
             } catch (error) {
                 console.error(error);
-                return res.status(500).send({ status: 500, message: "Something went wrong!" });
+                return res.send({ status: 500, message: "Something went wrong!" });
             }
         });
 
@@ -344,6 +346,59 @@ async function run() {
                     status: 404,
                     message: 'Failed to fetch Gadget details by id! Gadget not found!'
                 });
+            }
+        });
+
+
+        // TODO: JWT verification will be added later.
+        app.post("/gadgets/get_gadget_details_of_a_wishlist_array", async (req, res) => {
+            try {
+                const { userEmail } = req.body;
+
+                // Input validation
+                if (!userEmail) {
+                    return res.status(400).send({ status: 400, message: "userEmail is required!" });
+                }
+
+                // Verifying user authenticity
+                /*const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }*/
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Get gadget IDs from wishlist
+                const gadgetIdsArray = userResult.wishlist || [];
+                if (gadgetIdsArray.length === 0) {
+                    return res.send({ status: 200, data: [], message: "Wishlist is empty!" });
+                }
+
+                // Convert gadget IDs to ObjectId and fetch all gadgets in one query
+                let gadgetObjectIds;
+                try {
+                    gadgetObjectIds = gadgetIdsArray.map(id => new ObjectId(id));
+                } catch (error) {
+                    return res.send({ status: 400, message: "Invalid gadget ID format in wishlist!" });
+                }
+
+                const gadgetQuery = { _id: { $in: gadgetObjectIds } };
+                const gadgetObjectsArray = await gadgetsCollection.find(gadgetQuery).toArray();
+
+                return res.send({
+                    status: 200,
+                    data: gadgetObjectsArray,
+                    message: "Gadget details of wishlist fetched successfully!"
+                });
+
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ status: 500, message: "Something went wrong!" });
             }
         });
 
