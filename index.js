@@ -554,6 +554,53 @@ async function run() {
         });
 
 
+        app.post('/messages/add_new_message_from_a_user', async (req, res) => {
+            try {
+                const { userEmail, newMessageObj } = req.body;
+
+                // Input validation
+                if (!userEmail || !newMessageObj) {
+                    return res.status(400).send({ status: 400, message: "User email or message is missing!" });
+                }
+
+                // Verifying user authenticity
+                /*const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }*/
+
+                // Find the user's message chain
+                const messageChainQuery = { user_email: userEmail };
+                const messageChainResult = await messagesCollection.findOne(messageChainQuery);
+
+                // If message chain not found
+                if (!messageChainResult) {
+                    return res.status(404).send({ status: 404, message: "Message chain not found!" });
+                }
+
+                // Update message chain: push new message, increment total_count and unread_count
+                const messageChainUpdate = {
+                    $push: { message_chain: newMessageObj },
+                    $inc: { total_count: 1, unread_count: 1 }
+                }
+                const updateResult = await messagesCollection.updateOne(messageChainQuery, messageChainUpdate);
+
+                console.log(updateResult);
+
+                // Check if update was successful
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to add new message!" });
+                }
+
+                return res.status(200).send({ status: 200, message: "New message added successfully!" });
+
+            } catch (error) {
+                console.error('Failed to add new message from a user! :', error);
+                return res.send({ status: 500, message: "Failed to add new message from a user!" });
+            }
+        });
+
+
 
 
 
