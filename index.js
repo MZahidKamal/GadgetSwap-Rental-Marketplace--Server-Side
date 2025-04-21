@@ -12,7 +12,7 @@ const port = process.env.PORT || 3000;                            //Default from
 
 const jwt = require('jsonwebtoken');                                       //Default from JSON Web Token.
 
-const cookieParser = require('cookie-parser');      //Default from cookie-parser package.
+const cookieParser = require('cookie-parser');      //Default from the cookie-parser package.
 
 
 
@@ -77,7 +77,7 @@ const verifyJWT = (req, res, next) => {
 const {MongoClient, ServerApiVersion, ObjectId} = require('mongodb');
 
 
-/* The URI points to a specific MongoDB cluster and includes options for retrying writes and setting the write concern. */
+/* The URI points to a specific MongoDB cluster and includes options for retrying writings and setting the writing concern. */
 const uri = `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@cluster0.ktxyk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`; //From MongoDB Connection String
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -116,7 +116,7 @@ async function run() {
             //Setting JWT, at the client side, in the HTTP only cookie.
             res.cookie('token', token, {
                 httpOnly: true,                                                                                                             //Cookies access restricted from client side.
-                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in dev environment, and true while in production.
+                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in the dev environment, and true while in production.
                 sameSite: process.env.NODE_ENVIRONMENT === 'production' ? 'none' : 'Lax',                                                   //Protection from CSRF. None or lax supports most cross-origin use cases.
                 maxAge: 3600000,                                                                                                            //Token validity in millisecond. Setting this to cookies.
             }).status(201).send({token, success: true, message: "Login Successful, JWT stored in Cookie!"});
@@ -127,7 +127,7 @@ async function run() {
             // Clearing the HTTP-only cookie by setting maxAge to 0.
             res.clearCookie('token', {
                 httpOnly: true,                                                                                                             //Cookies access restricted from client side.
-                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in dev environment, and true while in production.
+                secure: process.env.NODE_ENVIRONMENT === 'production',                                                                      //Set false while in the dev environment, and true while in production.
                 sameSite: process.env.NODE_ENVIRONMENT === 'production' ? 'none' : 'Lax',                                                   //Protection from CSRF. None or lax supports most cross-origin use cases.
                 maxAge: 0,                                                                                                                  //Token validity in millisecond. Setting this to cookies.
             }).status(200).send({success: true, message: "Logout successful, cookie cleared!"});
@@ -154,7 +154,7 @@ async function run() {
                     return res.status(400).send({ status: 400, message: "newUser and email are required!" });
                 }
 
-                // Check if user already exists
+                // Check if a user already exists
                 const existingUser = await userCollection.findOne({ email: newUser?.email });
                 if (existingUser) {
                     return res.status(409).send({ status: 409, message: "User with this email already exists!" });
@@ -245,10 +245,17 @@ async function run() {
         /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
         app.post('/users/find_availability_by_email', async (req, res) => {
             const { email } = req.body;
-            const query = { email: email };
-            const result = await userCollection.findOne(query);
-            if (result) {
-                res.send({ status: 409, exists: true, message: 'Registration failed. Email already exists!' });
+            const userQuery = { email: email };
+            const userResult = await userCollection.findOne(userQuery);
+            if (userResult) {
+                const userImpression = {
+                    loginWith: userResult.loginWith,
+                    failedLoginAttempts: userResult?.failedLoginAttempts,
+                    lastFailedLoginAttempt: userResult?.lastFailedLoginAttempt,
+                    loginRestricted: userResult?.loginRestricted,
+                    loginRestrictedUntil: userResult?.loginRestrictedUntil
+                }
+                res.send({ status: 409, exists: true, userImpression, message: 'Registration failed. Email already exists!' });
             } else {
                 res.send({ status: 404, exists: false, message: 'Email address not exists!' });
             }
@@ -257,12 +264,48 @@ async function run() {
 
         /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
         app.post('/users/get_user_by_email', async (req, res) => {
-            const { email } = req.body;
-            const query = { email: email };
-            const result = await userCollection.findOne(query);
-            // res.status(200).send(result);
-            res.send({status: 200, data: result, message: 'Login successful!'});
-        })
+            try {
+                const { email } = req.body;
+
+                // Input validation
+                if (!email) {
+                    return res.status(400).send({ status: 400, message: "Email is required!" });
+                }
+
+                // Find the user
+                const userQuery = { email: email };
+                const userResult = await userCollection.findOne(userQuery);
+
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Check if login is restricted and reset fields if true
+                if (userResult.loginRestricted === true) {
+                    const updateFields = {
+                        failedLoginAttempts: 0,
+                        lastFailedLoginAttempt: 0,
+                        loginRestricted: false,
+                        loginRestrictedUntil: null
+                    };
+
+                    await userCollection.updateOne(
+                        userQuery,
+                        { $set: updateFields }
+                    );
+
+                    // Fetch updated user data
+                    const updatedUserResult = await userCollection.findOne(userQuery);
+                    return res.send({ status: 200, data: updatedUserResult, message: "Login successful!" });
+                }
+
+                return res.send({ status: 200, data: userResult, message: "Login successful!" });
+
+            } catch (error) {
+                console.error('Failed to fetch user:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
 
 
         app.post('/users/get_full_user_profile_details', verifyJWT, async (req, res) => {
@@ -284,7 +327,7 @@ async function run() {
                 const userQuery = { email: userEmail };
                 const userResult = await userCollection.findOne(userQuery);
 
-                // Check if user exists
+                // Check if a user exists
                 if (!userResult) {
                     return res.send({ status: 404, message: "User not found!" });
                 }
@@ -336,7 +379,7 @@ async function run() {
                 const updatedUserResult = await userCollection.updateOne(query, update);
                 const postUpdateUserResult = await userCollection.findOne(query);
 
-                // Check if update was successful
+                // Check if the update was successful
                 if (updatedUserResult.modifiedCount > 0) {
 
                     const message = gadgetExists
@@ -350,6 +393,199 @@ async function run() {
             } catch (error) {
                 console.error(error);
                 return res.send({ status: 500, message: "Something went wrong!" });
+            }
+        });
+
+
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.patch('/users/failed_login_attempt', async (req, res) => {
+            try {
+                const { email } = req.body;
+
+                // Input validation
+                if (!email) {
+                    return res.status(400).send({ status: 400, message: "Email is required!" });
+                }
+
+                // Find the user
+                const userQuery = { email: email };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Increment failedLoginAttempts and update lastFailedLoginAttempt
+                let updateFields = {
+                    failedLoginAttempts: userResult.failedLoginAttempts + 1,
+                    lastFailedLoginAttempt: new Date().getTime()
+                };
+
+                // Check if failedLoginAttempts reaches 3, then set login restrictions
+                if (updateFields.failedLoginAttempts >= 3) {
+                    updateFields.loginRestricted = true;
+                    updateFields.loginRestrictedUntil = new Date().getTime() + (10 * 60 * 1000); // Lock for 10 minutes
+                }
+
+                // Update the user document
+                const updateResult = await userCollection.updateOne(
+                    userQuery,
+                    { $set: updateFields }
+                );
+
+                // Check if the update was successful
+                if (updateResult.modifiedCount === 0) {
+                    return res.send({ status: 500, message: "Failed to update failed login attempt!" });
+                }
+
+                return res.send({
+                    status: 200,
+                    message: updateFields.loginRestricted
+                        ? "Account locked for 10 minutes due to multiple failed login attempts!"
+                        : "Failed login attempt recorded!"
+                });
+
+            } catch (error) {
+                console.error('Failed to record failed login attempt:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.patch('/users/update_user_profile_info', verifyJWT, async (req, res) => {
+            try {
+                const { userEmail, userInfoObj } = req.body;
+
+                // Input validation
+                if (!userEmail || !userInfoObj) {
+                    return res.status(400).send({ status: 400, message: "User email or user info is missing!" });
+                }
+
+                // Verifying user authenticity
+                const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Update the user profile with the provided fields
+                const updateFields = {
+                    displayName: userInfoObj.displayName,
+                    email: userInfoObj.email,
+                    personalDetails: {
+                        bio: userInfoObj.personalDetails.bio,
+                        profession: userInfoObj.personalDetails.profession,
+                        photoURL: userInfoObj.personalDetails.photoURL,
+                        phone: userInfoObj.personalDetails.phone,
+                        billingAddress: {
+                            street: userInfoObj.personalDetails.billingAddress.street,
+                            city: userInfoObj.personalDetails.billingAddress.city,
+                            zipCode: userInfoObj.personalDetails.billingAddress.zipCode,
+                            state: userInfoObj.personalDetails.billingAddress.state,
+                            country: userInfoObj.personalDetails.billingAddress.country
+                        }
+                    }
+                };
+
+                // Check if all personalDetails and billingAddress fields are filled
+                const allPersonalDetailsFilled = !!updateFields.personalDetails.bio &&
+                    !!updateFields.personalDetails.profession &&
+                    !!updateFields.personalDetails.photoURL &&
+                    !!updateFields.personalDetails.phone;
+
+                const allBillingAddressFilled = !!updateFields.personalDetails.billingAddress.street &&
+                    !!updateFields.personalDetails.billingAddress.city &&
+                    !!updateFields.personalDetails.billingAddress.zipCode &&
+                    !!updateFields.personalDetails.billingAddress.state &&
+                    !!updateFields.personalDetails.billingAddress.country;
+
+                // Set verified as a boolean based on whether all fields are filled
+                updateFields.personalDetails.verified = allPersonalDetailsFilled && allBillingAddressFilled;
+
+                const updateResult = await userCollection.updateOne(
+                    userQuery,
+                    { $set: updateFields }
+                );
+
+                // Check if the update was successful
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to update user profile!" });
+                }
+
+                // Fetch updated user data
+                const updatedUserResult = await userCollection.findOne(userQuery);
+                return res.send({status: 200, data: updatedUserResult, message: "User profile updated successfully!"});
+
+            } catch (error) {
+                console.error('Failed to update user profile:', error);
+                return res.send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.patch('/users/update_user_membership_info', verifyJWT, async (req, res) => {
+            try {
+                console.log('Yes, this line has been executed.')
+                const { userEmail, userMembershipObj } = req.body;
+
+                // Input validation
+                if (!userEmail || !userMembershipObj) {
+                    return res.status(400).send({ status: 400, message: "User email or membership info is missing!" });
+                }
+
+                // Verifying user authenticity
+                const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Update membership-related fields
+                const updateFields = {
+                    joinDate: userMembershipObj.joinDate,
+                    membershipDetails: {
+                        membershipTier: userMembershipObj.membershipDetails.membershipTier,
+                        points: userMembershipObj.membershipDetails.points,
+                        loyaltyProgressPercentage: userMembershipObj.membershipDetails.loyaltyProgressPercentage,
+                        rentalStreak: userMembershipObj.membershipDetails.rentalStreak,
+                        referrals: userMembershipObj.membershipDetails.referrals,
+                        nextTier: userMembershipObj.membershipDetails.nextTier,
+                        pointsToNextTier: userMembershipObj.membershipDetails.pointsToNextTier
+                    }
+                };
+
+                const updateResult = await userCollection.updateOne(
+                    userQuery,
+                    { $set: updateFields }
+                );
+
+                // Check if the update was successful
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to update membership info!" });
+                }
+
+                // Fetch updated user data
+                const updatedUserResult = await userCollection.findOne(userQuery);
+                return res.status(200).send({
+                    status: 200,
+                    data: updatedUserResult,
+                    message: "Membership info updated successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to update membership info:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
             }
         });
 
@@ -514,6 +750,157 @@ async function run() {
 
 
 
+        /*==================================== RENTAL ORDERS COLLECTION ==============================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "rentalOrdersCollection" AND ACCESS IT */
+        const rentalOrdersCollection = database.collection("rentalOrdersCollection");
+
+
+        app.post('/rental_orders/add_new_rental_order_from_a_user', verifyJWT, async (req, res) => {
+            try {
+                const { userEmail, newRentalOrderObj } = req.body;
+
+                // Input validation
+                if (!userEmail || !newRentalOrderObj) {
+                    return res.status(400).send({ status: 400, message: "User email, gadget ID, or rental order info is missing!" });
+                }
+
+                // Verifying user authenticity
+                const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Insert new rental order into rentalOrdersCollection
+                const rentalOrderResult = await rentalOrdersCollection.insertOne(newRentalOrderObj);
+                if (!rentalOrderResult.insertedId) {
+                    return res.status(500).send({ status: 500, message: "Failed to create rental order!" });
+                }
+
+                // Add rental order ID to the user's rentalOrders array as a string
+                // Increment user's active rental order count and add pointsEarned to stats.pointsEarned
+                const pointsEarned = newRentalOrderObj?.rentalStreak[newRentalOrderObj?.rentalStreak?.length - 1]?.pointsEarned;
+                const moneySpend = newRentalOrderObj?.rentalStreak[newRentalOrderObj?.rentalStreak?.length - 1]?.payableFinalAmount;
+                const rentalDaysCount = newRentalOrderObj?.rentalStreak[newRentalOrderObj?.rentalStreak?.length - 1]?.rentalDuration;
+                const userUpdateResult = await userCollection.updateOne(
+                    userQuery,
+                    {
+                        $push: { rentalOrders: rentalOrderResult.insertedId.toString() },
+                        $inc: {
+                            "stats.activeRentals": 1,
+                            "membershipDetails.points": pointsEarned,
+                            "stats.pointsEarned": pointsEarned,
+                            "stats.totalSpent": moneySpend,
+                            "membershipDetails.rentalStreak": rentalDaysCount,
+                        }
+                    }
+                );
+
+                if (userUpdateResult.modifiedCount === 0) {
+                    // Rollback: Delete the rental order if the user update fails
+                    await rentalOrdersCollection.deleteOne({ _id: rentalOrderResult.insertedId });
+                    return res.status(500).send({ status: 500, message: "Failed to update user's rental orders!" });
+                }
+
+                // Find the gadget
+                const gadgetQuery = { _id: new ObjectId(newRentalOrderObj?.gadget_id) };
+                const gadgetResult = await gadgetsCollection.findOne(gadgetQuery);
+                if (!gadgetResult) {
+                    // Rollback: Delete the rental order and remove from user's rentalOrders
+                    await rentalOrdersCollection.deleteOne({ _id: rentalOrderResult.insertedId });
+                    await userCollection.updateOne(userQuery, { $pull: { rentalOrders: rentalOrderResult.insertedId.toString() } });
+                    return res.status(404).send({ status: 404, message: "Gadget not found!" });
+                }
+
+                // Get new blocked dates from newRentalOrderObj
+                const newBlockedDates = newRentalOrderObj?.blockedDates;
+
+                if (newBlockedDates.length > 0) {
+                    // Update gadget's availability.blockedDates, allowing duplicates
+                    const gadgetUpdateResult = await gadgetsCollection.updateOne(
+                        gadgetQuery,
+                        { $push: { 'availability.blockedDates': { $each: newBlockedDates } } }
+                    );
+
+                    if (gadgetUpdateResult.modifiedCount === 0) {
+                        // Rollback: Delete the rental order and remove from user's rentalOrders
+                        await rentalOrdersCollection.deleteOne({ _id: rentalOrderResult.insertedId });
+                        await userCollection.updateOne(userQuery, { $pull: { rentalOrders: rentalOrderResult.insertedId.toString() } });
+                        return res.status(500).send({ status: 500, message: "Failed to update gadget's blocked dates!" });
+                    }
+                }
+
+                // Fetch the newly created rental order
+                const newRentalOrder = await rentalOrdersCollection.findOne({ _id: rentalOrderResult.insertedId });
+
+                return res.status(201).send({
+                    status: 201,
+                    data: newRentalOrder,
+                    message: "Rental order created and gadget availability updated successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to create rental order:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.post('/rental_orders/get_all_rental_orders_of_a_user', verifyJWT, async (req, res) => {
+            try {
+                const { userEmail } = req.body;
+
+                // Input validation
+                if (!userEmail) {
+                    return res.status(400).send({ status: 400, message: "User email is missing!" });
+                }
+
+                // Verifying user authenticity
+                const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Get rental order IDs from user's rentalOrders array
+                const rentalOrderIds = userResult.rentalOrders;
+
+                // Fetch full rental order documents from rentalOrdersCollection
+                const rentalOrders = await rentalOrdersCollection
+                    .find({
+                        _id: { $in: rentalOrderIds.map(id => new ObjectId(id)) }
+                    })
+                    .toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: rentalOrders,
+                    message: "User rental orders fetched successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch user rental orders:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+
+
         /*====================================== MESSAGES COLLECTION =================================================*/
 
 
@@ -540,7 +927,7 @@ async function run() {
                 const messageChainQuery = { user_email: userEmail };
                 const messageChainResult = await messagesCollection.findOne(messageChainQuery);
 
-                // If message chain not found
+                // If a message chain not found
                 if (!messageChainResult) {
                     return res.status(404).send({ status: 404, message: "Message chain not found!" });
                 }
@@ -577,7 +964,7 @@ async function run() {
                 const messageChainQuery = { user_email: userEmail };
                 const messageChainResult = await messagesCollection.findOne(messageChainQuery);
 
-                // If message chain not found
+                // If a message chain not found
                 if (!messageChainResult) {
                     return res.status(404).send({ status: 404, message: "Message chain not found!" });
                 }
@@ -595,7 +982,7 @@ async function run() {
                 const updateResult = await messagesCollection.updateOne(messageChainQuery, updateOperations);
                 const postUpdateMessageChainResult = await messagesCollection.findOne(messageChainQuery);
 
-                // Check if update was successful
+                // Check if the update was successful
                 if (updateResult.modifiedCount === 0) {
                     return res.send({ status: 500, message: "Failed to add new message!" });
                 }
@@ -662,7 +1049,7 @@ app.get('/', (req, res) => {
 
 
 /* This starts the Express server and listens for incoming connections on the specified port.
-It logs a message in the console indicating the app is running and the port it's listening on. */
+It logs a message in the console indicating the app is running and the port it's listening to on. */
 app.listen(port, () => {
     console.log(`GadgetSwap Rental Marketplace Application listening on port ${port}`);
 })
