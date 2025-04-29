@@ -168,7 +168,9 @@ async function run() {
 
                 // Insert message chain
                 const messageChain = {
-                    user_email: newUser.email,
+                    user_displayName: newUser?.displayName,
+                    user_email: newUser?.email,
+                    user_photoURL: newUser?.personalDetails?.photoURL,
                     total_count: 0,
                     unreadByUser_count: 0,
                     unreadByAdmin_count: 0,
@@ -188,7 +190,8 @@ async function run() {
 
                 // Insert notification chain
                 const notificationChain = {
-                    user_email: newUser.email,
+                    user_displayName: newUser?.displayName,
+                    user_email: newUser?.email,
                     total_count: 0,
                     unreadByUser_count: 0,
                     unreadByAdmin_count: 0,
@@ -209,7 +212,8 @@ async function run() {
 
                 // Insert activity history chain
                 const activityHistoryChain = {
-                    user_email: newUser.email,
+                    user_displayName: newUser?.displayName,
+                    user_email: newUser?.email,
                     total_count: 0,
                     activityHistory_chain: []
                 };
@@ -244,20 +248,48 @@ async function run() {
 
         /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
         app.post('/users/find_availability_by_email', async (req, res) => {
-            const { email } = req.body;
-            const userQuery = { email: email };
-            const userResult = await userCollection.findOne(userQuery);
-            if (userResult) {
-                const userImpression = {
-                    loginWith: userResult.loginWith,
-                    failedLoginAttempts: userResult?.failedLoginAttempts,
-                    lastFailedLoginAttempt: userResult?.lastFailedLoginAttempt,
-                    loginRestricted: userResult?.loginRestricted,
-                    loginRestrictedUntil: userResult?.loginRestrictedUntil
+            try {
+                const { email } = req.body;
+
+                // Input validation
+                if (!email) {
+                    return res.status(400).send({ status: 400, message: "Email is missing!" });
                 }
-                res.send({ status: 409, exists: true, userImpression, message: 'Registration failed. Email already exists!' });
-            } else {
-                res.send({ status: 404, exists: false, message: 'Email address not exists!' });
+
+                // Find the user
+                const userQuery = { email: email };
+                const userResult = await userCollection.findOne(userQuery);
+
+                if (!userResult) {
+                    return res.send({ status: 404, exists: false, message: 'Email address not exists!' });
+                }
+
+                // Update lastLogin
+                const newLastLogin = new Date().toISOString();
+                const updateField = {
+                    $set: { lastLogin: newLastLogin }
+                };
+                const options = { upsert: true };
+                const updatedUser = await userCollection.updateOne(userQuery, updateField, options);
+
+                // Fetch updated user data to get the new lastLogin
+                const updatedUserResult = await userCollection.findOne(userQuery);
+
+                // Prepare a user impression with updated data
+                const userImpression = {
+                    loginWith: updatedUserResult.loginWith,
+                    lastLogin: updatedUserResult.lastLogin, // Use updated lastLogin
+                    failedLoginAttempts: updatedUserResult?.failedLoginAttempts,
+                    lastFailedLoginAttempt: updatedUserResult?.lastFailedLoginAttempt,
+                    loginRestricted: updatedUserResult?.loginRestricted,
+                    loginRestrictedUntil: updatedUserResult?.loginRestrictedUntil
+                };
+
+                return res.send({ status: 409, exists: true, userImpression, message: 'Registration failed. Email already exists!' });
+
+            } catch (error) {
+                console.error('Failed to check email availability:', error);
+                return res.send({ status: 404, exists: false, message: 'Email address not exists!' });
             }
         });
 
@@ -492,6 +524,46 @@ async function run() {
                     }
                 };
 
+                // Get the message chain of this user and update respective fields
+                const messageChain = await messagesCollection.findOne({user_email: userEmail});
+                if (messageChain) {
+                    await messagesCollection.updateOne(
+                        {user_email: userEmail},
+                        {
+                            $set: {
+                                user_displayName: userInfoObj.displayName,
+                                user_photoURL: userInfoObj.personalDetails.photoURL,
+                            }
+                        }
+                    )
+                }
+
+                // Get the notification chain of this user and update respective fields
+                const notificationChain = await notificationsCollection.findOne({user_email: userEmail});
+                if (notificationChain) {
+                    await notificationsCollection.updateOne(
+                        {user_email: userEmail},
+                        {
+                            $set: {
+                                user_displayName: userInfoObj.displayName,
+                            }
+                        }
+                    )
+                }
+
+                // Get the activityHistories chain of this user and update respective fields
+                const activityHistoriesChain = await activityHistoriesCollection.findOne({user_email: userEmail});
+                if (activityHistoriesChain) {
+                    await activityHistoriesCollection.updateOne(
+                        {user_email: userEmail},
+                        {
+                            $set: {
+                                user_displayName: userInfoObj.displayName,
+                            }
+                        }
+                    )
+                }
+
                 // Check if all personalDetails and billingAddress fields are filled
                 const allPersonalDetailsFilled = !!updateFields.personalDetails.bio &&
                     !!updateFields.personalDetails.profession &&
@@ -513,8 +585,32 @@ async function run() {
                 );
 
                 // Check if the update was successful
-                if (updateResult.modifiedCount === 0) {
+                /*if (updateResult.modifiedCount === 0) {
                     return res.status(500).send({ status: 500, message: "Failed to update user profile!" });
+                }*/
+                if (updateResult.modifiedCount === 0) {
+                    // Check if the provided data matches the existing data
+                    const isSameData =
+                        userResult.displayName === userInfoObj.displayName &&
+                        userResult.email === userInfoObj.email &&
+                        userResult.personalDetails.bio === userInfoObj.personalDetails.bio &&
+                        userResult.personalDetails.profession === userInfoObj.personalDetails.profession &&
+                        userResult.personalDetails.photoURL === userInfoObj.personalDetails.photoURL &&
+                        userResult.personalDetails.phone === userInfoObj.personalDetails.phone &&
+                        userResult.personalDetails.billingAddress.street === userInfoObj.personalDetails.billingAddress.street &&
+                        userResult.personalDetails.billingAddress.city === userInfoObj.personalDetails.billingAddress.city &&
+                        userResult.personalDetails.billingAddress.zipCode === userInfoObj.personalDetails.billingAddress.zipCode &&
+                        userResult.personalDetails.billingAddress.state === userInfoObj.personalDetails.billingAddress.state &&
+                        userResult.personalDetails.billingAddress.country === userInfoObj.personalDetails.billingAddress.country;
+
+                    if (isSameData) {
+                        // No changes to update, but this is not an error
+                        const updatedUserResult = await userCollection.findOne(userQuery);
+                        return res.send({ status: 200, data: updatedUserResult, message: "User profile is already up to date!" });
+                    } else {
+                        // There were changes, but the update failed
+                        return res.status(500).send({ status: 500, message: "Failed to update user profile!" });
+                    }
                 }
 
                 // Fetch updated user data
@@ -530,7 +626,6 @@ async function run() {
 
         app.patch('/users/update_user_membership_info', verifyJWT, async (req, res) => {
             try {
-                console.log('Yes, this line has been executed.')
                 const { userEmail, userMembershipObj } = req.body;
 
                 // Input validation
@@ -586,6 +681,133 @@ async function run() {
             } catch (error) {
                 console.error('Failed to update membership info:', error);
                 return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.post('/users/get_full_details_of_all_users_for_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail } = req.body;
+
+                // Input validation
+                if (!adminEmail) {
+                    return res.status(400).send({ status: 400, message: "Admin email is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Fetch all users from userCollection
+                const allUsers = await userCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allUsers,
+                    message: "All user details fetched successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch user details:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.post('/users/delete_a_user_completely_with_no_rental_order', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, targetUserId } = req.body;
+                console.log(adminEmail, targetUserId)
+
+                // Input validation
+                if (!adminEmail || !targetUserId) {
+                    return res.status(400).send({ status: 400, message: "Admin email or target user ID is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Find the target user
+                const targetUserQuery = { _id: new ObjectId(targetUserId) };
+                const targetUserResult = await userCollection.findOne(targetUserQuery);
+                if (!targetUserResult) {
+                    return res.status(404).send({ status: 404, message: "Target user not found!" });
+                }
+
+                // Check if the target user has any active rentals
+                if (targetUserResult.rentalOrders.length > 0) {
+                    return res.status(400).send({ status: 400, message: "Cannot delete user with any existing rentals!" });
+                }
+
+                // Delete related documents from the messagesCollection
+                const messageDeleteResult = await messagesCollection.deleteOne({ _id: new ObjectId(targetUserResult.messageChain_id) });
+                if (messageDeleteResult.deletedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to delete user's message chain!" });
+                }
+
+                // Delete related documents from the notificationsCollection
+                const notificationDeleteResult = await notificationsCollection.deleteOne({ _id: new ObjectId(targetUserResult.notificationChain_id) });
+                if (notificationDeleteResult.deletedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to delete user's notification chain!" });
+                }
+
+                // Delete related documents from the activityHistoriesCollection
+                const activityDeleteResult = await activityHistoriesCollection.deleteOne({ _id: new ObjectId(targetUserResult.activityHistoryChain_id) });
+                if (activityDeleteResult.deletedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to delete user's activity history chain!" });
+                }
+
+                // Delete the target user from userCollection
+                const userDeleteResult = await userCollection.deleteOne(targetUserQuery);
+                if (userDeleteResult.deletedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to delete target user!" });
+                }
+
+                // Fetch all remaining users from userCollection
+                const allUsers = await userCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allUsers,
+                    message: "User and related data deleted successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to delete user:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
             }
         });
 
@@ -747,6 +969,178 @@ async function run() {
         });
 
 
+        app.post('/gadgets/get_all_gadgets_with_full_details_for_admin', async (req, res) => {
+            try {
+                const { adminEmail } = req.body;
+
+                // Input validation
+                if (!adminEmail) {
+                    return res.status(400).send({ status: 400, message: "Admin email is missing!" });
+                }
+
+                // Verifying admin authenticity
+                /*const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }*/
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Fetch all gadgets from gadgetsCollection
+                const allGadgets = await gadgetsCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allGadgets,
+                    message: "All gadgets fetched successfully with full details for admin!"
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch gadgets:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
+            }
+        });
+
+
+        app.patch('/gadgets/update_the_details_of_a_gadget_by_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, updatedGadgetObject } = req.body;
+
+                // Input validation
+                if (!adminEmail || !updatedGadgetObject || !updatedGadgetObject._id) {
+                    return res.status(400).send({ status: 400, message: "Admin email, gadget object, or gadget ID is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Find the gadget document to update
+                const gadgetQuery = { _id: new ObjectId(updatedGadgetObject._id) };
+                const gadgetResult = await gadgetsCollection.findOne(gadgetQuery);
+                if (!gadgetResult) {
+                    return res.status(404).send({ status: 404, message: "Gadget not found!" });
+                }
+
+                // Prepare the fields to update (excluding _id)
+                const updateFields = {};
+                for (const key in updatedGadgetObject) {
+                    if (key !== '_id') {
+                        updateFields[key] = updatedGadgetObject[key];
+                    }
+                }
+
+                // Update the gadget document
+                const updateResult = await gadgetsCollection.updateOne(
+                    gadgetQuery,
+                    { $set: updateFields }
+                );
+
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to update gadget!" });
+                }
+
+                // Fetch all gadgets from gadgetsCollection
+                const allGadgets = await gadgetsCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allGadgets,
+                    message: "Gadget updated successfully and all gadgets fetched!"
+                });
+
+            } catch (error) {
+                console.error('Failed to update gadget:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
+            }
+        });
+
+
+        app.post('/gadgets/add_new_gadget_with_details_by_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, newGadgetDetailsObject } = req.body;
+
+                // Input validation
+                if (!adminEmail || !newGadgetDetailsObject) {
+                    return res.status(400).send({ status: 400, message: "Admin email or new gadget details is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Insert the new gadget into gadgetsCollection
+                const insertResult = await gadgetsCollection.insertOne(newGadgetDetailsObject);
+                if (!insertResult.insertedId) {
+                    return res.status(500).send({ status: 500, message: "Failed to add new gadget!" });
+                }
+
+                // Fetch all gadgets from gadgetsCollection
+                const allGadgets = await gadgetsCollection.find({}).toArray();
+
+                return res.status(201).send({
+                    status: 201,
+                    data: allGadgets,
+                    message: "New gadget added successfully and all gadgets fetched!"
+                });
+
+            } catch (error) {
+                console.error('Failed to add new gadget:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
+            }
+        });
+
+
 
 
 
@@ -899,6 +1293,133 @@ async function run() {
         });
 
 
+        app.post('/rental_orders/get_full_details_of_all_rental_orders_for_admin', async (req, res) => {
+            try {
+                const { adminEmail } = req.body;
+
+                // Input validation
+                if (!adminEmail) {
+                    return res.status(400).send({ status: 400, message: "Admin email is missing!" });
+                }
+
+                // Verifying admin authenticity
+                /*const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }*/
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Fetch all rental orders except those where customerDetails.email matches adminEmail
+                const rentalOrders = await rentalOrdersCollection
+                    .find({ "customerDetails.email": { $ne: adminEmail } })
+                    .toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: rentalOrders,
+                    message: "All rental orders fetched successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch rental orders:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
+            }
+        });
+
+
+        app.patch('/rental_orders/update_the_details_of_a_rental_orders_by_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, updatedRentalOrderObj } = req.body;
+
+                // Input validation
+                if (!adminEmail || !updatedRentalOrderObj || !updatedRentalOrderObj._id) {
+                    return res.status(400).send({ status: 400, message: "Admin email, rental order object, or rental order ID is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Find the rental order document to update
+                const rentalOrderQuery = { _id: new ObjectId(updatedRentalOrderObj._id) };
+                const rentalOrderResult = await rentalOrdersCollection.findOne(rentalOrderQuery);
+                if (!rentalOrderResult) {
+                    return res.status(404).send({ status: 404, message: "Rental order not found!" });
+                }
+
+                // Prepare the fields to update (excluding _id)
+                const updateFields = {};
+                for (const key in updatedRentalOrderObj) {
+                    if (key !== '_id') {
+                        updateFields[key] = updatedRentalOrderObj[key];
+                    }
+                }
+
+                // TODO: If the shipmentStatus=return_received, make rentalStatus=completed
+                // TODO: If the rentalStatus=canceled, make rentalStatus=""
+
+                // Update the rental order document
+                const updateResult = await rentalOrdersCollection.updateOne(
+                    rentalOrderQuery,
+                    { $set: updateFields }
+                );
+
+                if (updateResult.modifiedCount === 0) {
+                    //return res.status(500).send({ status: 500, message: "Failed to update rental order!" });
+                }
+
+                // Fetch all rental orders except those where customerDetails.email matches adminEmail
+                const rentalOrders = await rentalOrdersCollection
+                    .find({ "customerDetails.email": { $ne: adminEmail } })
+                    .toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: rentalOrders,
+                    message: "Rental order updated successfully and all rental orders fetched!"
+                });
+
+            } catch (error) {
+                console.error('Failed to update rental order:', error);
+                return res.status(500).send({
+                    status: 500,
+                    message: "Internal Server Error",
+                    error: error.message || "Unknown error occurred"
+                });
+            }
+        });
+
+
+
 
 
         /*====================================== MESSAGES COLLECTION =================================================*/
@@ -970,12 +1491,30 @@ async function run() {
                 }
 
                 // Prepare update operation
-                const updateOperations = { $push: { message_chain: newMessageObj }, $inc: { total_count: 1 } };
-                if (newMessageObj.sender === 'admin' && newMessageObj.readByUser === false) {
-                    updateOperations.$inc.unreadByUser_count = 1;
-                }
-                if (newMessageObj.sender === 'user' && newMessageObj.readByAdmin === false) {
-                    updateOperations.$inc.unreadByAdmin_count = 1;
+                let updateOperations;
+                const operationsCombination1 = {
+                    $push: { message_chain: newMessageObj },
+                    $set: {
+                        unreadByUser_count: 0
+                    },
+                    $inc: {
+                        unreadByAdmin_count: 1,
+                        total_count: 1
+                    }
+                };
+                const operationsCombination2 = {
+                    $push: { message_chain: newMessageObj },
+                    $inc: {
+                        total_count: 1
+                    }
+                };
+
+                // Set updateOperations based on sender
+                if (newMessageObj.sender === 'user') {updateOperations = operationsCombination1;
+                } else if (newMessageObj.sender === 'admin') {updateOperations = operationsCombination2;
+                } else {
+                    // This case is already handled by the sender validation above, but adding for clarity
+                    return res.status(400).send({ status: 400, message: "Invalid sender value!" });
                 }
 
                 // Update message chain
@@ -992,6 +1531,238 @@ async function run() {
             } catch (error) {
                 console.error('Failed to add new message from a user! :', error);
                 return res.send({ status: 500, message: "Failed to add new message from a user!" });
+            }
+        });
+
+
+        app.post('/messages/get_all_messages_of_all_users_for_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail } = req.body;
+
+                // Input validation
+                if (!adminEmail) {
+                    return res.status(400).send({ status: 400, message: "Admin email is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, admin email mismatch!" });
+                }
+
+                // Find the admin
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if it is really an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, it is not an admin!" });
+                }
+
+                // Get all messages from messagesCollection
+                const allMessages = await messagesCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allMessages,
+                    message: "All messages fetched successfully for admin!"
+                });
+
+            } catch (error) {
+                console.error('Failed to fetch all messages for admin:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.patch('/messages/add_new_message_from_admin_to_a_user', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, targetUserId, newMessageObjFromAdmin } = req.body;
+
+                // Input validation
+                if (!adminEmail || !targetUserId || !newMessageObjFromAdmin) {
+                    return res.status(400).send({ status: 400, message: "Admin email, target user ID, or new message is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, it's not an admin!" });
+                }
+
+                // Find the message document for the target user in messagesCollection
+                const messageQuery = { _id: new ObjectId(targetUserId) };
+                const messageDoc = await messagesCollection.findOne(messageQuery);
+                if (!messageDoc) {
+                    return res.status(404).send({ status: 404, message: "Message chain for target user not found!" });
+                }
+
+                // Update the message document: push the new message to message_chain and increment unreadByUser_count
+                const updateResult = await messagesCollection.updateOne(
+                    messageQuery,
+                    {
+                        $push: {message_chain: newMessageObjFromAdmin},
+                        $set: {
+                            unreadByAdmin_count: 0
+                        },
+                        $inc: {
+                            unreadByUser_count: 1,
+                            total_count: 1
+                        }
+                    }
+                );
+
+                if (updateResult.modifiedCount === 0) {
+                    return res.status(500).send({ status: 500, message: "Failed to add new message!" });
+                }
+
+                // Fetch all messages from messagesCollection
+                const allMessages = await messagesCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allMessages,
+                    message: "New message added successfully and all messages fetched!"
+                });
+
+            } catch (error) {
+                console.error('Failed to add message:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.patch('/messages/a_users_message_chain_is_marked_as_read_by_admin', verifyJWT, async (req, res) => {
+            try {
+                const { adminEmail, targetUserEmail } = req.body;
+
+                // Input validation
+                if (!adminEmail || !targetUserEmail) {
+                    return res.status(400).send({ status: 400, message: "Admin email or target user email is missing!" });
+                }
+
+                // Verifying admin authenticity
+                const { decoded_email } = req;
+                if (adminEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the admin user
+                const adminQuery = { email: adminEmail };
+                const adminResult = await userCollection.findOne(adminQuery);
+                if (!adminResult) {
+                    return res.status(404).send({ status: 404, message: "Admin not found!" });
+                }
+
+                // Check if the user is an admin
+                if (adminResult.role !== 'admin') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, user is not an admin!" });
+                }
+
+                // Find the message document for the target user in messagesCollection
+                const messageQuery = { user_email: targetUserEmail };
+                const messageDoc = await messagesCollection.findOne(messageQuery);
+                if (!messageDoc) {
+                    return res.status(404).send({ status: 404, message: "Message chain for target user not found!" });
+                }
+
+                // Update the message document: set unreadByAdmin_count to 0
+                const updateResult = await messagesCollection.updateOne(
+                    messageQuery,
+                    { $set: { unreadByAdmin_count: 0 } }
+                );
+
+                if (updateResult.modifiedCount === 0) {
+                    // return res.status(500).send({ status: 500, message: "Failed to mark messages as read by admin!" });
+                }
+
+                // Fetch all messages from messagesCollection
+                const allMessages = await messagesCollection.find({}).toArray();
+
+                return res.status(200).send({
+                    status: 200,
+                    data: allMessages,
+                    message: "Messages marked as read by admin and all messages fetched!"
+                });
+
+            } catch (error) {
+                console.error('Failed to mark messages as read by admin:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
+
+
+        app.patch('/messages/a_users_message_chain_is_marked_as_read_by_user', verifyJWT, async (req, res) => {
+            try {
+                const { userEmail } = req.body;
+
+                // Input validation
+                if (!userEmail) {
+                    return res.status(400).send({ status: 400, message: "User email is missing!" });
+                }
+
+                // Verifying user authenticity
+                const { decoded_email } = req;
+                if (userEmail !== decoded_email) {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, email mismatch!" });
+                }
+
+                // Find the user
+                const userQuery = { email: userEmail };
+                const userResult = await userCollection.findOne(userQuery);
+                if (!userResult) {
+                    return res.status(404).send({ status: 404, message: "User not found!" });
+                }
+
+                // Check if the role is user
+                if (userResult.role !== 'user') {
+                    return res.status(403).send({ status: 403, message: "Forbidden access, role is not user!" });
+                }
+
+                // Find the message document in messagesCollection
+                const messageQuery = { user_email: userEmail };
+                const messageDoc = await messagesCollection.findOne(messageQuery);
+                if (!messageDoc) {
+                    return res.status(404).send({ status: 404, message: "Message chain for user not found!" });
+                }
+
+                // Update the message document: set unreadByUser_count to 0
+                const updateResult = await messagesCollection.updateOne(
+                    messageQuery,
+                    { $set: { unreadByUser_count: 0 } }
+                );
+
+                if (updateResult.modifiedCount === 0) {
+                    // return res.status(500).send({ status: 500, message: "Failed to mark messages as read by user!" });
+                }
+
+                // Fetch updated message document
+                const updatedMessageChainResult = await messagesCollection.findOne(messageQuery);
+
+                return res.status(200).send({
+                    status: 200,
+                    data: updatedMessageChainResult,
+                    message: "Messages marked as read by user successfully!"
+                });
+
+            } catch (error) {
+                console.error('Failed to mark messages as read by user:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
             }
         });
 
@@ -1014,6 +1785,55 @@ async function run() {
 
         /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "activityHistoriesCollection" AND ACCESS IT */
         const activityHistoriesCollection = database.collection("activityHistoriesCollection");
+
+
+
+
+
+        /*================================== NEWSLETTER EMAIL COLLECTION =============================================*/
+
+
+        /* CREATING (IF NOT PRESENT) / CONNECTING THE COLLECTION NAMED "newsletterEmailCollection" AND ACCESS IT */
+        const newsletterEmailCollection = database.collection("newsletterEmailCollection");
+
+
+        /* VERIFY JWT MIDDLEWARE WILL NOT WORK HERE, USER MAY UNAVAILABLE */
+        app.post('/add_this_email_for_newsletter', async (req, res) => {
+            try {
+                const { visitorEmail } = req.body;
+
+                // Input validation
+                if (!visitorEmail) {
+                    return res.status(400).send({ status: 400, message: "Visitor email is missing!" });
+                }
+
+                // Check if email already exists in the newsletterEmailCollection
+                const emailQuery = { email: visitorEmail };
+                const emailExists = await newsletterEmailCollection.findOne(emailQuery);
+
+                if (emailExists) {
+                    return res.status(200).send({
+                        status: 200,
+                        message: "This email is already subscribed to the newsletter!"
+                    });
+                }
+
+                // Save the email to newsletterEmailCollection
+                const insertResult = await newsletterEmailCollection.insertOne({ email: visitorEmail });
+                if (!insertResult.insertedId) {
+                    return res.status(500).send({ status: 500, message: "Failed to subscribe email to newsletter!" });
+                }
+
+                return res.status(201).send({
+                    status: 201,
+                    message: "Email successfully subscribed to the newsletter!"
+                });
+
+            } catch (error) {
+                console.error('Failed to process newsletter subscription:', error);
+                return res.status(500).send({ status: 500, message: "Internal Server Error" });
+            }
+        });
 
 
 
